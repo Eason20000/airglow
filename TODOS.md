@@ -95,8 +95,11 @@ Scope & packaging:
      generated config (pinned output) + `WLR_BACKENDS=headless`, no
      dbus-run-session/keyring; smoke-verified (Hello -> sway 1280x720 ->
      sunshine wlgrab + VAAPI)
-  1. sunshine config: `system_tray = false` [done]; creds via `sunshine --creds`
-     \+ state/pairing dir decision still pending
+  1. sunshine config: `system_tray = false` [done]; state redirect = launch
+     Sunshine with `XDG_CONFIG_HOME=<rt>/sunshine-home` (the 2026.09 toml
+     `state_file`/`credentials_file` keys are IGNORED) + first-run `--creds`
+     bootstrap with a random secret \[code done; re-verify after the memory
+     incident\]
   1. hostd hygiene: SIGTERM/child supervision (exit currently orphans children)
   1. pair + stream + input test: loopback on dev machine first, then SP4 as thin
      terminal (user forwards SSH port)
@@ -138,3 +141,10 @@ Scope & packaging:
   `SSH` session; the user types the password at the popup prompt (sudo reads
   tty, no echo; nothing via the agent). Run the privileged command itself inside
   the popup (sudo timestamps are per-tty).
+- MEMORY INCIDENT 2026-10-28: the headless sway+Sunshine (wlgrab) stack grew to
+  \>10GB RSS and starved the local strata inference service (~50GB RSS); user
+  killed it. Leak source not yet identified. Before rerunning capture/stream
+  tests: watch per-PID RSS (e.g.
+  `while :; do ps -o pid,rss,comm -p <pids>; sleep 5; done`), cap run time, and
+  prefer the SP4 thin terminal for decode-side work; never run long E2E loops on
+  the dev machine while inference is up.

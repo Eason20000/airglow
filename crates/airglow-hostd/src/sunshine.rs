@@ -42,15 +42,64 @@ pub fn state_dir(cfg: &Config) -> anyhow::Result<PathBuf> {
     }))
 }
 
+/// Sunshine keeps its state (pairings, certs, credentials, logs) under
+/// `$XDG_CONFIG_HOME/sunshine`; redirect it into the runtime state dir.
+pub fn sunshine_config_home(cfg: &Config) -> anyhow::Result<PathBuf> {
+    let dir = state_dir(cfg)?.join("sunshine-home");
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    Ok(dir)
+}
+
+/// Random hex string from the system RNG (no extra dependency).
+fn random_hex(bytes: usize) -> anyhow::Result<String> {
+    let raw = std::fs::read("/dev/urandom").context("reading /dev/urandom")?;
+    Ok(raw.iter().take(bytes).map(|b| format!("{b:02x}")).collect())
+}
+
+/// First-run gate for Sunshine: with no stored credentials it refuses to
+/// serve until the web UI has been used. Seed throwaway credentials
+/// instead (the web UI stays disabled; PIN pairing is unaffected).
+pub fn ensure_credentials(cfg: &Config, config_home: &Path) -> anyhow::Result<()> {
+    let state = config_home.join(".config/sunshine/sunshine_state.json");
+    if state.exists() {
+        return Ok(());
+    }
+    let pass = random_hex(16)?;
+    let status = Command::new(&cfg.sunshine.binary)
+        .arg("--creds")
+        .arg("airglow")
+        .arg(&pass)
+        .env("XDG_CONFIG_HOME", config_home)
+        .stdin(Stdio::null())
+        .status()
+        .with_context(|| {
+            format!(
+                "bootstrapping sunshine credentials via {}",
+                cfg.sunshine.binary
+            )
+        })?;
+    if !status.success() {
+        bail!("sunshine --creds failed: {status}");
+    }
+    eprintln!(
+        "airglow-hostd: bootstrapped sunshine credentials at {}",
+        state.display()
+    );
+    Ok(())
+}
+
 pub fn spawn(
     cfg: &Config,
     config_path: &Path,
     wayland_display: &str,
 ) -> anyhow::Result<std::process::Child> {
+    let config_home = sunshine_config_home(cfg)?;
+    ensure_credentials(cfg, &config_home)?;
     let child = Command::new(&cfg.sunshine.binary)
         .arg(config_path)
         .env("WAYLAND_DISPLAY", wayland_display)
         .env("XDG_SESSION_TYPE", "wayland")
+        .env("XDG_CONFIG_HOME", &config_home)
         .stdin(Stdio::null())
         .spawn()
         .with_context(|| format!("spawning {} (is sunshine installed?)", cfg.sunshine.binary))?;
