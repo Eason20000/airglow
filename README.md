@@ -14,10 +14,9 @@ only needs video decode capacity, compositing stays on the host.
 Airglow reuses the Sunshine/Moonlight streaming stack for video, basic input and
 audio, and adds the missing orchestration:
 
-- `airglow-hostd` — host supervisor: PAM-style policy, virtual monitor creation
-  via `org.gnome.Mutter.RemoteDesktop` D-Bus (client-decided resolution/scale),
-  spawning the headless session profile, Sunshine config generation and
-  lifecycle, uinput templates, USB/IP attach.
+- `airglow-hostd` — host supervisor: auth policy, session profiles (v1: sway
+  headless + pinned `HEADLESS-*` output; GNOME/Mutter is v1.5+), Sunshine config
+  generation and lifecycle, uinput templates, USB/IP attach.
 - `airglow-session` — GDM session wrapper: sends the control-channel `Hello`
   (mode + video + device specs) and launches Moonlight kiosk-style.
 - `airglow-capture` — evdev grab + side channel for touchpad gestures, pen
@@ -32,19 +31,20 @@ renders natively at the terminal's resolution with matching device semantics.
 ## Status
 
 P1 core in place: see `TODOS.md` for the decision archive and current milestone
-state. `airglow-hostd` accepts the `Hello` handshake, boots a headless GNOME
-session with `gnome-shell --headless --virtual-monitor <client mode>`, starts
-Sunshine with a generated `sunshine.toml` attached to the new Wayland display,
-and records the session for `airglowctl status`. The session wrapper execs
-Moonlight.
+state. `airglow-hostd` accepts the `Hello` handshake, boots a headless desktop
+session profile, starts Sunshine with a generated `sunshine.toml` attached to
+the new Wayland display, and records the session for `airglowctl status`. The
+session wrapper execs Moonlight.
 
-Verified end to end on GNOME Shell 50: virtual monitor (Meta-0) appears in the
-headless session and Sunshine enumerates it at the client mode.
+Verified: the GNOME path (`gnome-shell --headless --virtual-monitor`) works on
+Shell 50 and Sunshine enumerates the virtual monitor (Meta-0). v1 then pivoted
+to sway/wlroots: on sway, Sunshine's wlgrab selects the pinned headless output
+natively (no portal consent blockers — see `docs/p1-capture-notes.md`) and VAAPI
+H.264/HEVC/AV1 encoders are available.
 
-Known next items: headless consent automation for Sunshine's RemoteDesktop
-portal flow and capture path selection (see `docs/p1-capture-notes.md`), PAM
-authentication replacing the allowlist stub, side-channel input fidelity (P2),
-USB/IP (P3), pairing (P4).
+Known next items: sway session profile in hostd and the pair + stream + input
+E2E, PAM authentication replacing the allowlist stub, side-channel input
+fidelity (P2), USB/IP (P3), pairing (P4).
 
 ## Development
 

@@ -1,5 +1,9 @@
 # P1 capture notes (GNOME Wayland, Sunshine 2026.09, Shell 50)
 
+> Historical: v1 pivoted to sway/wlroots (see TODOS.md), where Sunshine's wlgrab
+> capture works natively and the consent blocker below is moot. Kept for the
+> GNOME profile (v1.5+).
+
 Validated chain, in order:
 
 1. `dbus-run-session -- gnome-shell --headless --virtual-monitor WxH@R` boots a

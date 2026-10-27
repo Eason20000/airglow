@@ -17,10 +17,12 @@ Goal:
   mode", no self-maintained compositor); own the orchestration: `airglow-hostd`
   supervisor, GDM session wrapper, side-channel input fidelity, USB/IP
   forwarding.
-- v1 commitments: GNOME-first (`gnome-shell --headless --virtual-monitor`
-  bootstrap accepted; consumes Mutter D-Bus but does NOT patch upstream;
-  injection stays kernel-level uinput). wlroots (weston-headless +
-  wlr-screencopy) and X11 (dummy + XShm) are v1.5+.
+- v1 commitments: wlroots-first using an existing compositor (sway
+  `WLR_BACKENDS=headless` + headless output; Sunshine wlgrab capture — no
+  portal, no consent dialogs, no Mutter). GNOME/Mutter (
+  `gnome-shell --headless --virtual-monitor`, portal consent automation) is
+  deferred to v1.5+ because of portal/Mutter pitfalls. X11 (dummy + XShm) also
+  v1.5+.
 
 Interfaces:
 
@@ -51,19 +53,31 @@ Scope & packaging:
 
 ## Pending decisions
 
-- Consent automation route (pick as P1b task 1; details in
-  `docs/p1-capture-notes.md`):
-  - uinput keyboard in session + `org.gnome.Mutter.RemoteDesktop` key injection
-    to press Enter on the consent dialog (needs `/dev/uinput` access: udev rule;
-    test on headless host).
-  - systemd unit with `AmbientCapabilities=CAP_SYS_ADMIN` + KMS capture for
-    Sunshine (avoids portal consent).
-  - upstream request: pre-authorized RemoteDesktop consent.
 - Side/control transport: QUIC vs TLS-TCP. Decide before P2.
-- E2E topology: which headless host (candidate ESN20-R9P21; verify GPU/encoder
-  first), which machine is the thin terminal.
 - Sunshine state/pairing data location (`~/.config/sunshine` vs hostd-managed
-  runtime dir; `portal_token`, `sunshine_state.json`).
+  runtime dir; creds setup via `sunshine --creds user pass`,
+  `sunshine_state.json`).
+
+## Verified (2026-10-28, dev machine as headless host)
+
+- sway 1.12 headless: `WLR_BACKENDS=headless sway --config gen` creates
+  `HEADLESS-1`; output syntax `output HEADLESS-1 resolution WxH@R` (headless
+  refresh reports 0 Hz — frame pacing is client-driven).
+- Sunshine 2026.09 on sway: **wlgrab enumerates and selects HEADLESS-1** (native
+  wlr-export-dmabuf; portal errors are harmless fallbacks). No consent dialog
+  anywhere. Encoders: h264/hevc/av1 VAAPI on RX 7800 XT.
+- Sunshine CLI: `-0` reads the pairing PIN from stdin at startup; needs
+  `system_tray = false` headless (else "Main loop has exited"); first run
+  demands Web creds → use `sunshine --creds <user> <pass>`.
+- moonlight-qt CLI (QT_QPA_PLATFORM=offscreen): `pair <host> --pin NNNN`,
+  `stream <host> "<app>" --resolution WxH --fps N --bitrate K`.
+
+## E2E topology (settled 2026-10-28)
+
+- Visited (headless) host: this dev machine (ESN20-Z390, RX 7800 XT VAAPI;
+  user's GNOME session stopped).
+- Accessing thin terminal: ESN20-SP4; user reverse-forwards its SSH port to the
+  dev machine on request.
 
 ## Milestones
 
@@ -73,17 +87,18 @@ Scope & packaging:
   Shell 50
 - [x] P1b research: portal chain validated; consent dialog is the headless
   blocker (24d8ceb)
-- [ ] **P1b E2E** — DoD: a Moonlight client pairs through our tooling and
-  `moonlight stream` shows the headless GNOME desktop with keyboard input
-  landing in it.
-  1. pick + implement consent route (pending decision)
-  1. hostd hygiene (each blocks realistic E2E): run
-     `gnome-keyring-daemon --start --components=secrets` in the session;
-     Sunshine state/pairing dir handling; SIGTERM/child supervision (currently
-     hostd exit orphans children)
-  1. deployment path to the E2E host: `nix run` / small package (P6 minimal
-     slice) beats copying binaries
-  1. run pair + stream + input loopback/2-host test
+- [ ] **P1b E2E (sway profile)** — DoD: a Moonlight client pairs through our
+  tooling and `moonlight stream` shows the headless sway session with
+  keyboard/mouse input landing in it (via Sunshine's wlr-virtual-pointer path —
+  verify on sway).
+  1. hostd session profiles: `profile = "sway" | "gnome"`; sway launch =
+     generated config (pinned output) + `WLR_BACKENDS=headless`, no
+     dbus-run-session/keyring; gnome profile keeps current path (v1.5+)
+  1. sunshine config additions: `system_tray = false`; creds via
+     `sunshine --creds`; state/pairing dir decision (pending)
+  1. hostd hygiene: SIGTERM/child supervision (exit currently orphans children)
+  1. pair + stream + input test: loopback on dev machine first, then SP4 as thin
+     terminal (user forwards SSH port)
 - [ ] **P2 input fidelity** (needs transport decision) — DoD: a real client
   touchscreen/touchpad/pen appears as a matching uinput mirror on the host;
   libinput gestures/pen work in the remote session; no double injection with
