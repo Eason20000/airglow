@@ -91,11 +91,12 @@ Scope & packaging:
   tooling and `moonlight stream` shows the headless sway session with
   keyboard/mouse input landing in it (via Sunshine's wlr-virtual-pointer path —
   verify on sway).
-  1. hostd session profiles: `profile = "sway" | "gnome"`; sway launch =
+  1. [done] hostd session profiles: `profile = "sway" | "gnome"`; sway launch =
      generated config (pinned output) + `WLR_BACKENDS=headless`, no
-     dbus-run-session/keyring; gnome profile keeps current path (v1.5+)
-  1. sunshine config additions: `system_tray = false`; creds via
-     `sunshine --creds`; state/pairing dir decision (pending)
+     dbus-run-session/keyring; smoke-verified (Hello -> sway 1280x720 ->
+     sunshine wlgrab + VAAPI)
+  1. sunshine config: `system_tray = false` [done]; creds via `sunshine --creds`
+     \+ state/pairing dir decision still pending
   1. hostd hygiene: SIGTERM/child supervision (exit currently orphans children)
   1. pair + stream + input test: loopback on dev machine first, then SP4 as thin
      terminal (user forwards SSH port)

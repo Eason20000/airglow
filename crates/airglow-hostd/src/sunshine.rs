@@ -25,6 +25,7 @@ pub fn write_config(cfg: &Config) -> anyhow::Result<PathBuf> {
          encoder = \"{encoder}\"\n\
          origin_web_ui_allowed = \"none\"\n\
          upnp = false\n\
+         system_tray = false\n\
          ",
         encoder = cfg.sunshine.encoder,
     );

@@ -38,8 +38,26 @@ pub struct Config {
 pub struct SessionConfig {
     /// Users allowed to open remote sessions.
     user_allowlist: Vec<String>,
-    /// Desktop session binary for the active profile.
-    pub session_command: String,
+    /// Session profile: "sway" (v1, wlroots) or "gnome" (v1.5+).
+    #[serde(default = "default_profile")]
+    pub profile: String,
+    #[serde(default = "default_sway_binary")]
+    pub sway_binary: String,
+    /// Desktop session binary for the GNOME profile.
+    #[serde(default = "default_gnome_command")]
+    pub gnome_session_command: String,
+}
+
+fn default_profile() -> String {
+    "sway".to_string()
+}
+
+fn default_sway_binary() -> String {
+    "sway".to_string()
+}
+
+fn default_gnome_command() -> String {
+    "gnome-shell".to_string()
 }
 
 #[derive(Debug, Deserialize)]

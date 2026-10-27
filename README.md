@@ -32,9 +32,10 @@ renders natively at the terminal's resolution with matching device semantics.
 
 P1 core in place: see `TODOS.md` for the decision archive and current milestone
 state. `airglow-hostd` accepts the `Hello` handshake, boots a headless desktop
-session profile, starts Sunshine with a generated `sunshine.toml` attached to
-the new Wayland display, and records the session for `airglowctl status`. The
-session wrapper execs Moonlight.
+session profile (`session.profile = "sway"` (v1) or `"gnome"`), starts Sunshine
+with a generated `sunshine.toml` attached to the new Wayland display, and
+records the session for `airglowctl status`. The session wrapper execs
+Moonlight.
 
 Verified: the GNOME path (`gnome-shell --headless --virtual-monitor`) works on
 Shell 50 and Sunshine enumerates the virtual monitor (Meta-0). v1 then pivoted

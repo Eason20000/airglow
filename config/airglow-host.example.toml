@@ -5,13 +5,15 @@
 # the control channel outside that range.
 
 listen = "0.0.0.0:48990"
-host_id = "r9p21"
+host_id = "z390"
 
 [session]
 user_allowlist = ["eason20000"]
-# Desktop session binary; the GNOME profile uses gnome-shell directly so
-# --headless --virtual-monitor can be passed.
-session_command = "gnome-shell"
+# "sway" (v1, wlroots headless) or "gnome" (v1.5+, gnome-shell
+# --headless --virtual-monitor).
+profile = "sway"
+sway_binary = "sway"
+gnome_session_command = "gnome-shell"
 
 [sunshine]
 binary = "sunshine"
