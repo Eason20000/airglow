@@ -31,11 +31,12 @@ renders natively at the terminal's resolution with matching device semantics.
 
 ## Status
 
-P1 core in place: `airglow-hostd` accepts the `Hello` handshake, boots a
-headless GNOME session with
-`gnome-shell --headless --virtual-monitor <client mode>`, starts Sunshine with a
-generated `sunshine.toml` attached to the new Wayland display, and records the
-session for `airglowctl status`. The session wrapper execs Moonlight.
+P1 core in place: see `TODOS.md` for the decision archive and current milestone
+state. `airglow-hostd` accepts the `Hello` handshake, boots a headless GNOME
+session with `gnome-shell --headless --virtual-monitor <client mode>`, starts
+Sunshine with a generated `sunshine.toml` attached to the new Wayland display,
+and records the session for `airglowctl status`. The session wrapper execs
+Moonlight.
 
 Verified end to end on GNOME Shell 50: virtual monitor (Meta-0) appears in the
 headless session and Sunshine enumerates it at the client mode.
