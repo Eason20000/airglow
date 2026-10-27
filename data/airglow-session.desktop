@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Airglow Remote Session
+Comment=Connect to a remote airglow desktop session
+Exec=airglow-session
+Type=Application
+DesktopNames=GNOME

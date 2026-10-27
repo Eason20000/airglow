@@ -1,0 +1,12 @@
+[package]
+name = "airglowctl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "airglowctl"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "airglow-capture"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "airglow-capture"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true

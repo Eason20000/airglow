@@ -1,0 +1,14 @@
+# airglow host daemon configuration. NixOS generates this file
+# declaratively; do not edit in place.
+
+listen = "0.0.0.0:47990"
+host_id = "r9p21"
+
+[session]
+user_allowlist = ["eason20000"]
+session_command = "gnome-session"
+
+[sunshine]
+binary = "sunshine"
+encoder = "vaapi"
+stream_port = 47989

@@ -1,0 +1,15 @@
+# airglow client (thin terminal) configuration.
+
+host = "192.168.1.10:47990"
+
+[video]
+fps = 60
+bitrate_kbps = 20000
+codec = "h264"
+
+[session]
+moonlight_binary = "moonlight"
+moonlight_args = ["stream", "Airglow", "--mode", "1920x1080@60"]
+
+[capture]
+grab = ["touchpad", "pen", "touchscreen"]

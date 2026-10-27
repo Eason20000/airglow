@@ -1,0 +1,16 @@
+[package]
+name = "airglow-session"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "airglow-session"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+airglow-common = { path = "../airglow-common" }
