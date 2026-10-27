@@ -1,48 +1,54 @@
 //! airglow-hostd: host-side supervisor.
 //!
-//! Skeleton (P0): loads configuration, serves the line-delimited-JSON
-//! control channel, and records the client `Hello`. Session spawning
-//! (virtual monitor + headless GNOME + Sunshine) lands in P1.
+//! P1: loads configuration, serves the line-delimited-JSON control
+//! channel, and on each accepted `Hello` tears down any previous session
+//! then starts a headless desktop session (virtual monitor at the
+//! client's mode) plus a Sunshine instance serving the video stream.
+//! PAM authentication replaces the allowlist stub in a later step.
 
 use std::io::{BufRead, BufReader};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use serde::Deserialize;
 
-use airglow_common::{Hello, PROTOCOL_VERSION, Ready};
+use airglow_common::{Hello, HostState, PROTOCOL_VERSION, Ready, SessionState};
+
+mod session;
+mod sunshine;
+
+use session::ActiveSession;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Config {
+pub struct Config {
     listen: String,
     host_id: String,
     session: SessionConfig,
     #[serde(default)]
     sunshine: SunshineConfig,
+    #[serde(default)]
+    runtime_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct SessionConfig {
+pub struct SessionConfig {
     /// Users allowed to open remote sessions.
     user_allowlist: Vec<String>,
-    /// Session profile command, e.g. `gnome-session`. Consumed in P1.
-    #[allow(dead_code)]
-    session_command: String,
+    /// Desktop session binary for the active profile.
+    pub session_command: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct SunshineConfig {
-    // Consumed by the P1 session spawner when generating sunshine.toml.
-    #[allow(dead_code)]
+pub struct SunshineConfig {
     #[serde(default = "default_sunshine_binary")]
-    binary: String,
-    #[allow(dead_code)]
+    pub binary: String,
     #[serde(default = "default_encoder")]
-    encoder: String,
+    pub encoder: String,
     #[serde(default = "default_stream_port")]
     stream_port: u16,
 }
@@ -75,32 +81,77 @@ fn load_config(path: &std::path::Path) -> anyhow::Result<Config> {
     toml::from_str(&raw).with_context(|| format!("parsing config {}", path.display()))
 }
 
-fn handle_conn(mut stream: TcpStream, cfg: &Config) -> anyhow::Result<()> {
-    let mut reader = BufReader::new(stream.try_clone()?);
-    let mut line = String::new();
-    reader.read_line(&mut line).context("reading Hello")?;
+struct Server {
+    cfg: Config,
+    active: Mutex<Option<ActiveSession>>,
+}
 
-    let hello: Hello = serde_json::from_str(&line).context("decoding Hello")?;
-    if hello.protocol != PROTOCOL_VERSION {
-        reject(&mut stream, "unsupported protocol version")?;
-        return Ok(());
+impl Server {
+    fn write_state(&self, session: Option<&SessionState>) -> anyhow::Result<()> {
+        let dir = sunshine::state_dir(&self.cfg)?;
+        std::fs::create_dir_all(&dir).ok();
+        let state = HostState {
+            host_id: self.cfg.host_id.clone(),
+            listen: self.cfg.listen.clone(),
+            session: session.cloned(),
+        };
+        let path = dir.join("state.json");
+        let tmp = path.with_extension("json.tmp");
+        let mut tmp_file =
+            std::fs::File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
+        serde_json::to_writer_pretty(&mut tmp_file, &state).context("writing state tmp")?;
+        std::fs::rename(&tmp, &path).context("replacing state file")?;
+        Ok(())
     }
-    if !cfg.session.user_allowlist.contains(&hello.user) {
-        reject(&mut stream, "user not allowed")?;
-        return Ok(());
+
+    fn handle_conn(&self, mut stream: TcpStream) -> anyhow::Result<()> {
+        let mut reader = BufReader::new(stream.try_clone()?);
+        let mut line = String::new();
+        reader.read_line(&mut line).context("reading Hello")?;
+
+        let hello: Hello = serde_json::from_str(&line).context("decoding Hello")?;
+        if hello.protocol != PROTOCOL_VERSION {
+            return reject(&mut stream, "unsupported protocol version");
+        }
+        if !self.cfg.session.user_allowlist.contains(&hello.user) {
+            return reject(&mut stream, "user not allowed");
+        }
+        let mode = hello
+            .modes
+            .first()
+            .copied()
+            .context("client sent no display mode")?;
+
+        // Replace any previous session before starting the new one.
+        if let Some(old) = self.active.lock().unwrap().take() {
+            eprintln!("airglow-hostd: tearing down previous session");
+            old.stop();
+        }
+
+        let started = session::ActiveSession::start(&self.cfg, &hello.user, &mode)?;
+        let snap = SessionState {
+            user: started.user.clone(),
+            width: started.width,
+            height: started.height,
+            refresh: started.refresh,
+            wayland_display: started.wayland_display.clone(),
+            started_utc: utc_now(),
+        };
+        self.write_state(Some(&snap))?;
+        *self.active.lock().unwrap() = Some(started);
+
+        let reply = Ready::Ready {
+            host_id: self.cfg.host_id.clone(),
+            stream_addr: format!(
+                "{}:{}",
+                host_of(&self.cfg.listen),
+                self.cfg.sunshine.stream_port
+            ),
+            auth_required: false,
+        };
+        serde_json::to_writer(&mut stream, &reply)?;
+        Ok(())
     }
-
-    // P1: create virtual monitor at hello.modes[0], spawn the session
-    // profile, then start Sunshine tuned to hello.video.
-    tracing_stub(&hello);
-
-    let reply = Ready::Ready {
-        host_id: cfg.host_id.clone(),
-        stream_addr: format!("{}:{}", host_of(&cfg.listen), cfg.sunshine.stream_port),
-        auth_required: true,
-    };
-    serde_json::to_writer(&mut stream, &reply)?;
-    Ok(())
 }
 
 fn reject(stream: &mut TcpStream, message: &str) -> anyhow::Result<()> {
@@ -118,15 +169,13 @@ fn host_of(listen: &str) -> String {
         .unwrap_or_else(|| "0.0.0.0".to_string())
 }
 
-fn tracing_stub(hello: &Hello) {
-    // Replace with structured logging once the session manager exists.
-    eprintln!(
-        "hello: {} mode(s), {} devices, codec {:?} @ {}fps",
-        hello.modes.len(),
-        hello.devices.len(),
-        hello.video.codec,
-        hello.video.fps
-    );
+fn utc_now() -> String {
+    // No chrono dependency for the skeleton; system clock is enough.
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{secs}")
 }
 
 fn main() -> anyhow::Result<()> {
@@ -135,16 +184,33 @@ fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| "/etc/airglow/host.toml".to_string());
     let cfg = load_config(PathBuf::from(path).as_path())?;
 
-    let listener = TcpListener::bind(&cfg.listen)
-        .with_context(|| format!("binding control channel {}", cfg.listen))?;
+    let server = Arc::new(Server {
+        cfg,
+        active: Mutex::new(None),
+    });
+
+    let listener = TcpListener::bind(&server.cfg.listen)
+        .with_context(|| format!("binding control channel {}", server.cfg.listen))?;
     eprintln!(
         "airglow-hostd: host_id={} listening on {}",
-        cfg.host_id, cfg.listen
+        server.cfg.host_id, server.cfg.listen
     );
+    server.write_state(None).ok();
+
+    let mut conns = Vec::new();
     for stream in listener.incoming() {
-        let stream = stream.context("accept")?;
-        if let Err(err) = handle_conn(stream, &cfg) {
-            eprintln!("airglow-hostd: connection error: {err:#}");
+        match stream {
+            Ok(stream) => {
+                let srv = Arc::clone(&server);
+                let handle = std::thread::spawn(move || {
+                    if let Err(err) = srv.handle_conn(stream) {
+                        eprintln!("airglow-hostd: connection error: {err:#}");
+                    }
+                });
+                conns.retain(|h: &std::thread::JoinHandle<()>| !h.is_finished());
+                conns.push(handle);
+            }
+            Err(err) => eprintln!("airglow-hostd: accept error: {err:#}"),
         }
     }
     Ok(())

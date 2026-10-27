@@ -1,6 +1,6 @@
 # airglow client (thin terminal) configuration.
 
-host = "192.168.1.10:47990"
+host = "192.168.1.10:48990"
 
 [video]
 fps = 60

@@ -87,3 +87,21 @@ pub enum Ready {
         message: String,
     },
 }
+
+/// Snapshot the host writes for `airglowctl status`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionState {
+    pub user: String,
+    pub width: u32,
+    pub height: u32,
+    pub refresh: u32,
+    pub wayland_display: String,
+    pub started_utc: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HostState {
+    pub host_id: String,
+    pub listen: String,
+    pub session: Option<SessionState>,
+}

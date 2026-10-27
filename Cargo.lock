@@ -42,7 +42,9 @@ dependencies = [
 name = "airglowctl"
 version = "0.1.0"
 dependencies = [
+ "airglow-common",
  "anyhow",
+ "serde_json",
 ]
 
 [[package]]

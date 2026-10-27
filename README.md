@@ -31,10 +31,19 @@ renders natively at the terminal's resolution with matching device semantics.
 
 ## Status
 
-P0 skeleton: control-channel types, host daemon config + `Hello` handling,
-session wrapper that execs Moonlight, device listing. Session spawning (P1),
-input fidelity (P2), USB forwarding (P3) and pairing (P4) follow the roadmap in
-the project notes.
+P1 core in place: `airglow-hostd` accepts the `Hello` handshake, boots a
+headless GNOME session with
+`gnome-shell --headless --virtual-monitor <client mode>`, starts Sunshine with a
+generated `sunshine.toml` attached to the new Wayland display, and records the
+session for `airglowctl status`. The session wrapper execs Moonlight.
+
+Verified end to end on GNOME Shell 50: virtual monitor (Meta-0) appears in the
+headless session and Sunshine enumerates it at the client mode.
+
+Known next items: ScreenCast (PipeWire portal) capture path with pre-authorized
+permissions (or privileged KMS) instead of the current wlgrab/KMS attempts, PAM
+authentication replacing the allowlist stub, side-channel input fidelity (P2),
+USB/IP (P3), pairing (P4).
 
 ## Development
 

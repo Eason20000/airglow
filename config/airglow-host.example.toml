@@ -1,12 +1,17 @@
 # airglow host daemon configuration. NixOS generates this file
 # declaratively; do not edit in place.
+#
+# Port note: Sunshine owns 47984-48010 (web UI/video/audio/control); pick
+# the control channel outside that range.
 
-listen = "0.0.0.0:47990"
+listen = "0.0.0.0:48990"
 host_id = "r9p21"
 
 [session]
 user_allowlist = ["eason20000"]
-session_command = "gnome-session"
+# Desktop session binary; the GNOME profile uses gnome-shell directly so
+# --headless --virtual-monitor can be passed.
+session_command = "gnome-shell"
 
 [sunshine]
 binary = "sunshine"

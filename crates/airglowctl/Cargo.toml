@@ -10,3 +10,5 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
+serde_json.workspace = true
+airglow-common = { path = "../airglow-common" }
