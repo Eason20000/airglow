@@ -40,8 +40,8 @@ session for `airglowctl status`. The session wrapper execs Moonlight.
 Verified end to end on GNOME Shell 50: virtual monitor (Meta-0) appears in the
 headless session and Sunshine enumerates it at the client mode.
 
-Known next items: ScreenCast (PipeWire portal) capture path with pre-authorized
-permissions (or privileged KMS) instead of the current wlgrab/KMS attempts, PAM
+Known next items: headless consent automation for Sunshine's RemoteDesktop
+portal flow and capture path selection (see `docs/p1-capture-notes.md`), PAM
 authentication replacing the allowlist stub, side-channel input fidelity (P2),
 USB/IP (P3), pairing (P4).
 

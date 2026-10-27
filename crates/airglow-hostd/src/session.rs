@@ -78,6 +78,10 @@ impl ActiveSession {
             .arg("--virtual-monitor")
             .arg(&monitor_arg)
             .env("XDG_SESSION_TYPE", "wayland")
+            // Portal backends (ScreenCast/RemoteDesktop) are selected by
+            // XDG_CURRENT_DESKTOP; without this the session falls back to
+            // the gtk portal which lacks screen capture support.
+            .env("XDG_CURRENT_DESKTOP", "GNOME")
             .stdin(Stdio::null())
             .spawn()
             .with_context(|| format!("spawning {}", cfg.session.session_command))?;
