@@ -50,9 +50,18 @@ to sway/wlroots: on sway, Sunshine's wlgrab selects the pinned headless output
 natively (no portal consent blockers — see `docs/p1-capture-notes.md`) and VAAPI
 H.264/HEVC/AV1 encoders are available.
 
-Known next items: sway session profile in hostd and the pair + stream + input
-E2E, PAM authentication replacing the allowlist stub, side-channel input
-fidelity (P2), USB/IP (P3), pairing (P4).
+Cross-host loopback (Z390 host, R9P21 client) is verified end to end: pairing
+through the Sunshine web API, wlgrab -> VAAPI HEVC -> RTSP -> Moonlight video,
+and keyboard/pointer input landing in the remote session. Input on a headless
+sway session requires `libinput`, which requires an active seat: hostd launches
+sway with `WLR_BACKENDS=headless,libinput` and `LIBSEAT_BACKEND=seatd`, so the
+host must run seatd (with `SEATD_VTBOUND=0`) and let the session user reach its
+socket. A P6 NixOS module will ship that setup.
+
+Known next items: driving pairing/streaming from `airglowctl`, PAM
+authentication replacing the allowlist stub, child supervision in hostd,
+side-channel input fidelity (P2), USB/IP (P3), pairing (P4), seatd system
+service (P6).
 
 ## Development
 

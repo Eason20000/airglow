@@ -114,10 +114,16 @@ fn sway_config(cfg: &Config, mode: &Mode) -> anyhow::Result<PathBuf> {
 
 fn spawn_sway(cfg: &Config, mode: &Mode, run_dir: &Path) -> anyhow::Result<Child> {
     let path = sway_config(cfg, mode)?;
+    // Input on a headless session: Sunshine can only inject through
+    // uinput, so the compositor needs libinput. libinput needs an active
+    // seat; a remote/headless host has none, so sway talks to seatd
+    // (run with SEATD_VTBOUND=0 so it never touches a VT). Without the
+    // libinput backend sway starts but sees no input devices at all.
     Command::new(&cfg.session.sway_binary)
         .arg("--config")
         .arg(&path)
-        .env("WLR_BACKENDS", "headless")
+        .env("WLR_BACKENDS", "headless,libinput")
+        .env("LIBSEAT_BACKEND", "seatd")
         .env("XDG_SESSION_TYPE", "wayland")
         .env("XDG_RUNTIME_DIR", run_dir)
         .stdin(Stdio::null())
@@ -151,7 +157,7 @@ impl ActiveSession {
             .then(|| sway_run_dir(cfg))
             .transpose()?;
 
-        let mut desktop = match cfg.session.profile.as_str() {
+        let desktop = match cfg.session.profile.as_str() {
             "sway" => spawn_sway(cfg, mode, sway_run.as_ref().unwrap())?,
             "gnome" => spawn_gnome(cfg, mode)?,
             other => bail!("unknown session profile {other}"),

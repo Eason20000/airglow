@@ -82,8 +82,12 @@ Scope & packaging:
 
 - Visited (headless) host: this dev machine (ESN20-Z390, RX 7800 XT VAAPI;
   user's GNOME session stopped).
-- Accessing thin terminal: ESN20-SP4; user reverse-forwards its SSH port to the
-  dev machine on request.
+- Accessing thin terminal: ESN20-R9P21 for now (SP4 is not at home). R9P21 is a
+  RTX 3060 + Cezanne laptop whose user is not in `video`, so Moonlight decodes
+  in software; that is fine for verification. Its headless sway has no input
+  devices, so injected key events cannot reach a window there — the test rig
+  runs Moonlight under Xvfb and types through XTest instead. A real thin
+  terminal has a physical keyboard, so this only affects the test harness.
 
 ## Milestones
 
@@ -95,12 +99,27 @@ Scope & packaging:
   blocker (24d8ceb)
 - [ ] **P1b E2E (sway profile)** — DoD: a Moonlight client pairs through our
   tooling and `moonlight stream` shows the headless sway session with
-  keyboard/mouse input landing in it (via Sunshine's wlr-virtual-pointer path —
-  verify on sway).
+  keyboard/mouse input landing in it. Sunshine has no wlr virtual-input
+  protocol, so input is uinput only; the compositor must therefore have
+  libinput.
+  - [done] video loopback Z390 -> R9P21: wlgrab -> VAAPI HEVC -> RTSP ->
+    Moonlight (software decode); red test wallpaper confirmed in a client
+    screenshot.
+  - [done] input loopback: XTest type in Moonlight under Xvfb -> Sunshine uinput
+    -> sway libinput -> foot receives `hello-airglow`; pointer motion works too.
+  - [done] headless sway needs libinput for input, and libinput needs an active
+    seat: run seatd (`SEATD_VTBOUND=0`, socket group `wheel` here) and launch
+    sway with `WLR_BACKENDS=headless,libinput` + `LIBSEAT_BACKEND=seatd`.
+    Without those, sway starts but `swaymsg -t get_inputs` is empty and no
+    injected event can arrive. seatd allows only one active client per seat, so
+    a stray sway holding the seat makes the next session start fail with "no new
+    wayland socket appeared".
+  - [ ] P6 must install seatd as a system service (`services.seatd`,
+    `SEATD_VTBOUND=0`) and add the hostd user to its socket group.
   1. [done] hostd session profiles: `profile = "sway" | "gnome"`; sway launch =
-     generated config (pinned output) + `WLR_BACKENDS=headless`, no
-     dbus-run-session/keyring; smoke-verified (Hello -> sway 1280x720 ->
-     sunshine wlgrab + VAAPI)
+     generated config (pinned output) + `WLR_BACKENDS=headless,libinput` +
+     `LIBSEAT_BACKEND=seatd`, no dbus-run-session/keyring; smoke-verified (Hello
+     -> sway 1280x720 -> sunshine wlgrab + VAAPI)
   1. sunshine config: `system_tray = false` [done]; state redirect = launch
      Sunshine with `XDG_CONFIG_HOME=<rt>/sunshine-home` (the 2026.09 toml
      `state_file`/`credentials_file` keys are IGNORED; real state dir is
@@ -113,8 +132,11 @@ Scope & packaging:
      sway output pinned via `resolution WxH` only (headless has no refresh
      control). 3x Hello-replacement rotation passes under the RAM wall.
   1. hostd hygiene: SIGTERM/child supervision (exit currently orphans children)
-  1. pair + stream + input test: loopback on dev machine first, then SP4 as thin
-     terminal (user forwards SSH port)
+  1. pair + stream + input test: [done, by hand] Z390 \<-> R9P21 pairing via the
+     Sunshine web API (Basic auth, confighttp port 47990: GET/POST/DELETE
+     `/api/pin`; the stdin `--pin 0` trick is unreliable), stream + input
+     verified. Remaining: drive it from `airglowctl pair` and repeat on SP4 as
+     the thin terminal (user forwards SSH port).
 - [ ] **P2 input fidelity** (needs transport decision) — DoD: a real client
   touchscreen/touchpad/pen appears as a matching uinput mirror on the host;
   libinput gestures/pen work in the remote session; no double injection with
@@ -129,8 +151,9 @@ Scope & packaging:
   via `vhci_hcd` sysfs.
 - [ ] **P4 auth & UX** — DoD: unauthenticated clients cannot open a session; GDM
   login leads to a working session with no manual pairing. PAM replacing
-  `user_allowlist`; `airglowctl pair` wrapping Sunshine stdin PIN
-  (`sunshine ... -0`) + `moonlight pair --pin`.
+  `user_allowlist`; `airglowctl pair` driving the Sunshine web API (Basic auth
+  on confighttp 47990, `GET/POST/DELETE /api/pin`) instead of the stdin PIN
+  (`sunshine -0`), which failed in testing.
 - [ ] **P5 perf** — DoD: measured end-to-end latency numbers per mode/encoder;
   tuned encoder/bitrate/fps defaults.
 - [ ] **P6 NixOS integration** — DoD: `my.nixos.airglow` module + pkgs in
@@ -158,6 +181,19 @@ Scope & packaging:
   it. Root cause: `random_hex` used `std::fs::read("/dev/urandom")` — reading a
   char device until EOF, i.e. forever. Fixed with `read_exact` into a fixed
   buffer. Never unbounded-read a device file.
+- seatd for a headless test host (needs root; its socket group must include the
+  session user). Start it with `SEATD_VTBOUND=0` so it never touches a VT, and
+  wrap it in `sudo sh -c '...'` so the inner `</dev/null` redirect does not
+  swallow sudo's own password prompt. Here it listens on `/run/seatd.sock` with
+  group `wheel`.
+- Pairing by hand (client side, no proxy): with the host's Sunshine web creds,
+  `GET /api/pin` (Basic auth, `https://127.0.0.1:47990`) to obtain `pairing_id`,
+  `POST /api/pin` with `{"pairing_id","pin","name"}`, and `DELETE /api/pin` to
+  clear a stale pending pair.
+- Client test rig on a headless machine: run Moonlight under
+  `Xvfb :99 -screen 0 WxHx24` (DISPLAY=:99, QT_QPA_PLATFORM=xcb,
+  SDL_AUDIODRIVER=dummy) and inject keys with `xdotool type`; a headless sway
+  client has no seat keyboard, so wlrctl/wtype injects reach nothing there.
 - RAM wall for ALL load tests: run the whole stack as a transient user unit so
   hostd + sway + sunshine share one cgroup and get auto-killed over the limit:
   `systemctl --user stop airglow-smoke; systemd-run --user --unit=airglow-smoke -p MemoryMax=1G -p TasksMax=256 ./target/debug/airglow-hostd <host.toml>`;
