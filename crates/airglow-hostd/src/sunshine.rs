@@ -52,15 +52,18 @@ pub fn sunshine_config_home(cfg: &Config) -> anyhow::Result<PathBuf> {
 
 /// Random hex string from the system RNG (no extra dependency).
 fn random_hex(bytes: usize) -> anyhow::Result<String> {
-    let raw = std::fs::read("/dev/urandom").context("reading /dev/urandom")?;
-    Ok(raw.iter().take(bytes).map(|b| format!("{b:02x}")).collect())
+    use std::io::Read;
+    let mut buf = vec![0u8; bytes];
+    let mut f = std::fs::File::open("/dev/urandom").context("opening /dev/urandom")?;
+    f.read_exact(&mut buf).context("reading /dev/urandom")?;
+    Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 /// First-run gate for Sunshine: with no stored credentials it refuses to
 /// serve until the web UI has been used. Seed throwaway credentials
 /// instead (the web UI stays disabled; PIN pairing is unaffected).
 pub fn ensure_credentials(cfg: &Config, config_home: &Path) -> anyhow::Result<()> {
-    let state = config_home.join(".config/sunshine/sunshine_state.json");
+    let state = config_home.join("sunshine/sunshine_state.json");
     if state.exists() {
         return Ok(());
     }
@@ -92,15 +95,20 @@ pub fn spawn(
     cfg: &Config,
     config_path: &Path,
     wayland_display: &str,
+    run_dir: Option<&Path>,
 ) -> anyhow::Result<std::process::Child> {
     let config_home = sunshine_config_home(cfg)?;
     ensure_credentials(cfg, &config_home)?;
-    let child = Command::new(&cfg.sunshine.binary)
-        .arg(config_path)
+    let mut cmd = Command::new(&cfg.sunshine.binary);
+    cmd.arg(config_path)
         .env("WAYLAND_DISPLAY", wayland_display)
         .env("XDG_SESSION_TYPE", "wayland")
         .env("XDG_CONFIG_HOME", &config_home)
-        .stdin(Stdio::null())
+        .stdin(Stdio::null());
+    if let Some(rd) = run_dir {
+        cmd.env("XDG_RUNTIME_DIR", rd);
+    }
+    let child = cmd
         .spawn()
         .with_context(|| format!("spawning {} (is sunshine installed?)", cfg.sunshine.binary))?;
 

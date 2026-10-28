@@ -25,6 +25,7 @@ pub struct ActiveSession {
     pub height: u32,
     pub refresh: u32,
     pub wayland_display: String,
+    sway_run: Option<PathBuf>,
     desktop: Child,
     sunshine: Child,
 }
@@ -50,7 +51,30 @@ fn list_wayland_sockets(dir: &Path) -> BTreeSet<String> {
     out
 }
 
-/// Discover the newest wayland socket that was not there before.
+/// Private runtime dir for the sway session. Immune to stale/reclaimed
+/// sockets in the shared runtime dir: SIGKILLed compositors leave
+/// `wayland-N.lock` behind, wlroots lock files carry no pid, sway skips
+/// pinned WAYLAND_DISPLAY names, and add_socket_auto numbers above any
+/// existing wayland-N.
+fn sway_run_dir(cfg: &Config) -> anyhow::Result<PathBuf> {
+    let dir = sunshine::state_dir(cfg)?.join("sway-run");
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    Ok(dir)
+}
+
+/// Shared teardown path when the compositor never came up.
+fn failed_start(mut desktop: Child, err: anyhow::Error) -> anyhow::Error {
+    let reason = match desktop.try_wait() {
+        Ok(Some(status)) => format!("{err}; compositor exited: {status}"),
+        _ => err.to_string(),
+    };
+    let _ = desktop.kill();
+    let _ = desktop.wait();
+    anyhow::anyhow!(reason)
+}
+
+/// Discover the newest wayland socket that was not there before (GNOME
+/// profile: dbus-run-session picks the name for us).
 fn discover_wayland_display(dir: &Path, before: &BTreeSet<String>) -> anyhow::Result<String> {
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
@@ -71,9 +95,12 @@ fn sway_config(cfg: &Config, mode: &Mode) -> anyhow::Result<PathBuf> {
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let path = dir.join("sway-config");
     let mut content = String::from("xwayland disable\n");
+    // The wlroots headless backend has no custom refresh rates (sway
+    // rejects `WxH@R` outright); frame pacing is driven by Sunshine's
+    // requested rate and the wlroots frame events.
     content.push_str(&format!(
-        "output HEADLESS-1 resolution {}x{}@{}\n",
-        mode.width, mode.height, mode.refresh
+        "output HEADLESS-1 resolution {}x{}\n",
+        mode.width, mode.height
     ));
     if mode.scale != 100 {
         content.push_str(&format!(
@@ -85,13 +112,14 @@ fn sway_config(cfg: &Config, mode: &Mode) -> anyhow::Result<PathBuf> {
     Ok(path)
 }
 
-fn spawn_sway(cfg: &Config, mode: &Mode) -> anyhow::Result<Child> {
+fn spawn_sway(cfg: &Config, mode: &Mode, run_dir: &Path) -> anyhow::Result<Child> {
     let path = sway_config(cfg, mode)?;
     Command::new(&cfg.session.sway_binary)
         .arg("--config")
         .arg(&path)
         .env("WLR_BACKENDS", "headless")
         .env("XDG_SESSION_TYPE", "wayland")
+        .env("XDG_RUNTIME_DIR", run_dir)
         .stdin(Stdio::null())
         .spawn()
         .with_context(|| format!("spawning {}", cfg.session.sway_binary))
@@ -119,20 +147,27 @@ impl ActiveSession {
     pub fn start(cfg: &Config, user: &str, mode: &Mode) -> anyhow::Result<Self> {
         let dir = runtime_dir()?;
         let before = list_wayland_sockets(&dir);
+        let sway_run = (cfg.session.profile == "sway")
+            .then(|| sway_run_dir(cfg))
+            .transpose()?;
 
         let mut desktop = match cfg.session.profile.as_str() {
-            "sway" => spawn_sway(cfg, mode)?,
+            "sway" => spawn_sway(cfg, mode, sway_run.as_ref().unwrap())?,
             "gnome" => spawn_gnome(cfg, mode)?,
             other => bail!("unknown session profile {other}"),
         };
 
-        let wayland_display = match discover_wayland_display(&dir, &before) {
-            Ok(d) => d,
-            Err(err) => {
-                let _ = desktop.kill();
-                let _ = desktop.wait();
-                return Err(err);
-            }
+        let wayland_display = match &sway_run {
+            // Private dir: any wayland-N appearing there is ours (sway may
+            // start numbering above 0 even in an empty dir).
+            Some(rd) => match discover_wayland_display(rd, &BTreeSet::new()) {
+                Ok(d) => d,
+                Err(err) => return Err(failed_start(desktop, err)),
+            },
+            None => match discover_wayland_display(&dir, &before) {
+                Ok(d) => d,
+                Err(err) => return Err(failed_start(desktop, err)),
+            },
         };
         eprintln!(
             "airglow-hostd: desktop session up on {wayland_display} ({}x{}@{})",
@@ -140,7 +175,8 @@ impl ActiveSession {
         );
 
         let sun_path = sunshine::write_config(cfg)?;
-        let sun = sunshine::spawn(cfg, &sun_path, &wayland_display).context("spawning sunshine")?;
+        let sun = sunshine::spawn(cfg, &sun_path, &wayland_display, sway_run.as_deref())
+            .context("spawning sunshine")?;
 
         Ok(Self {
             user: user.to_string(),
@@ -148,6 +184,7 @@ impl ActiveSession {
             height: mode.height,
             refresh: mode.refresh,
             wayland_display,
+            sway_run,
             desktop,
             sunshine: sun,
         })
@@ -158,5 +195,17 @@ impl ActiveSession {
         let _ = self.sunshine.wait();
         let _ = self.desktop.kill();
         let _ = self.desktop.wait();
+        // SIGKILL leaves the wayland socket + lock in our private run dir;
+        // remove them so the next sway session also gets wayland-0.
+        if let Some(rd) = &self.sway_run {
+            if let Ok(entries) = std::fs::read_dir(rd) {
+                for e in entries.flatten() {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    if name.starts_with("wayland-") {
+                        let _ = std::fs::remove_file(e.path());
+                    }
+                }
+            }
+        }
     }
 }
