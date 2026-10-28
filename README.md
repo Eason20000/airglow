@@ -28,6 +28,13 @@ audio, and adds the missing orchestration:
 Video modes and input device trees are declared by the client, so the host
 renders natively at the terminal's resolution with matching device semantics.
 
+Code policy: every crate carries `#![forbid(unsafe_code)]` (hard error, no local
+overrides). If kernel interfaces (ioctl EVIOCGRAB/UI_DEV_CREATE, usbip) require
+`unsafe`, they land in one dedicated exception crate that itself denies
+`unsafe_code` and allows it only per-item with `// SAFETY:` comments and a
+written justification in the docs; no exceptions anywhere else without that
+record.
+
 ## Status
 
 P1 core in place: see `TODOS.md` for the decision archive and current milestone

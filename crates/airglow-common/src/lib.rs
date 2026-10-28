@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Wire types shared by the airglow control plane.
 //!
 //! The control plane is a line-delimited JSON protocol spoken between the

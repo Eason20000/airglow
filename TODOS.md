@@ -50,6 +50,12 @@ Scope & packaging:
   module (`my.nixos.*` in nix-config + pkgs in nix-modules) at P6.
 - License GPL-3.0-only (Sunshine/Moonlight are separate processes, no copyleft
   propagation). Commits GPG-signed; ask user to unlock before committing.
+- Safety policy: `#![forbid(unsafe_code)]` in every crate (hard ban, not warn).
+  Future unavoidable unsafe (evdev/uinput ioctls, usbip) goes into one dedicated
+  exception crate: crate-level `deny` + per-item `#[allow(unsafe_code)]` +
+  `// SAFETY:` comment + written justification in docs; any other exception
+  needs explicit user sign-off recorded here. Does not cover dependency-internal
+  unsafe or safe-Rust bugs (e.g. leaks).
 
 ## Pending decisions
 
@@ -97,9 +103,15 @@ Scope & packaging:
      sunshine wlgrab + VAAPI)
   1. sunshine config: `system_tray = false` [done]; state redirect = launch
      Sunshine with `XDG_CONFIG_HOME=<rt>/sunshine-home` (the 2026.09 toml
-     `state_file`/`credentials_file` keys are IGNORED) + first-run `--creds`
-     bootstrap with a random secret \[code done; re-verify after the memory
-     incident\]
+     `state_file`/`credentials_file` keys are IGNORED; real state dir is
+     `$XDG_CONFIG_HOME/sunshine/`) + first-run `--creds` bootstrap \[done,
+     verified: bootstraps once, state survives session replacement\]
+  1. sway wayland discovery \[done\]: sway runs with a private
+     `XDG_RUNTIME_DIR=<rt>/sway-run` and discovery diffs inside it only
+     (shared-dir names are unreliable: SIGKILL leaves stale locks, locks carry
+     no pid, pinned WAYLAND_DISPLAY is skipped, stale locks force renumbering).
+     sway output pinned via `resolution WxH` only (headless has no refresh
+     control). 3x Hello-replacement rotation passes under the RAM wall.
   1. hostd hygiene: SIGTERM/child supervision (exit currently orphans children)
   1. pair + stream + input test: loopback on dev machine first, then SP4 as thin
      terminal (user forwards SSH port)
@@ -141,10 +153,13 @@ Scope & packaging:
   `SSH` session; the user types the password at the popup prompt (sudo reads
   tty, no echo; nothing via the agent). Run the privileged command itself inside
   the popup (sudo timestamps are per-tty).
-- MEMORY INCIDENT 2026-10-28: the headless sway+Sunshine (wlgrab) stack grew to
-  \>10GB RSS and starved the local strata inference service (~50GB RSS); user
-  killed it. Leak source not yet identified. Before rerunning capture/stream
-  tests: watch per-PID RSS (e.g.
-  `while :; do ps -o pid,rss,comm -p <pids>; sleep 5; done`), cap run time, and
-  prefer the SP4 thin terminal for decode-side work; never run long E2E loops on
-  the dev machine while inference is up.
+- MEMORY INCIDENT 2026-10-28 (resolved): airglow-hostd grew to >10GB RSS,
+  OOM-killed opencode, starved the local strata inference service; user killed
+  it. Root cause: `random_hex` used `std::fs::read("/dev/urandom")` — reading a
+  char device until EOF, i.e. forever. Fixed with `read_exact` into a fixed
+  buffer. Never unbounded-read a device file.
+- RAM wall for ALL load tests: run the whole stack as a transient user unit so
+  hostd + sway + sunshine share one cgroup and get auto-killed over the limit:
+  `systemctl --user stop airglow-smoke; systemd-run --user --unit=airglow-smoke -p MemoryMax=1G -p TasksMax=256 ./target/debug/airglow-hostd <host.toml>`;
+  logs: `journalctl --user -u airglow-smoke`. In the test host.toml use absolute
+  sway/sunshine store paths (the unit PATH is minimal).

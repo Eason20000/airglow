@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! airglow-hostd: host-side supervisor.
 //!
 //! P1: loads configuration, serves the line-delimited-JSON control

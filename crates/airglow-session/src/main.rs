@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! airglow-session: GDM session wrapper.
 //!
 //! Started from a custom wayland session .desktop file. Skeleton (P0):

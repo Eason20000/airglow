@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! airglow-capture: client-side input capture.
 //!
 //! Skeleton (P0): lists candidate evdev devices. P2 adds EVIOCGRAB,

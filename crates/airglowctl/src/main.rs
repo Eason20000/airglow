@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! airglowctl: host-side operational CLI. No web panel: pairing, status,
 //! and device policy are driven from the terminal and config files.
 
